@@ -1,0 +1,8 @@
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: bert-model
+spec:
+  predictor:
+    containers:
+    - image: pj3677/bertmodel:0.0.1
