@@ -59,116 +59,94 @@ bert-model   http://bert-model.default.example.com   True           100         
 curl -H "Host: bert-model.default.example.com" -H "content-type: application/json"  http://localhost:8080/v1/models/bert-emotion-model:predict -d '{"input": "The sky is blue and the sun is shining"}'
 ```
 
-<<<<<<< HEAD
 ## Basic Authentication 
 
-1. Create a curl pod and label for istio injection in the "user1" and "user2" namespace
-
-```
-kubectl create ns user1
-kubectl create ns user2
-```
-
-```
-kubectl label namespace user1 istio-injection=enabled --overwrite
-kubectl label namespace user2 istio-injection=enabled --overwrite
-```
-
-```
-kubectl apply -n user1 -f https://raw.githubusercontent.com/istio/istio/master/samples/sleep/sleep.yaml
-kubectl apply -n user2 -f https://raw.githubusercontent.com/istio/istio/master/samples/sleep/sleep.yaml
-```
-
-2. Create a PeerAuthentication policy to enforce strict mtls
-
-```
-kubectl apply -f - <<EOF
-apiVersion: security.istio.io/v1beta1
-kind: PeerAuthentication
-metadata:
-  name: default
-  namespace: user1
-spec:
-  mtls:
-    mode: STRICT
-EOF
-```
-
-3. Create an AuthorizationPolicy:
+1. Create an AuthorizationPolicy on the gateway:
 
 ```
 kubectl apply -f - <<EOF
 apiVersion: security.istio.io/v1beta1
 kind: AuthorizationPolicy
 metadata:
-  name: allow-serving-tests
-  namespace: user1
+  name: allow-with-header
+  namespace: istio-system
 spec:
+  selector:
+    matchLabels:
+      app: istio-ingressgateway
   action: ALLOW
   rules:
-    # 1. mTLS for service from source "user1" namespace to destination service when TargetBurstCapacity=0 without local gateway and activator on the path
-    # Source Service from "user1" namespace -> Destination Service in "user1" namespace
-    - from:
-        - source:
-            namespaces: ["user1"]
-    # 2. mTLS for service from source "user1" namespace to destination service with activator on the path
-    # Source Service from "user1" namespace -> Activator(Knative Serving namespace) -> Destination service in "user1" namespace
-    # unfortunately currently we could not lock down the source namespace as Activator does not capture the source namespace when proxying the request, see https://github.com/knative-sandbox/net-istio/issues/554.
-    - from:
-        - source:
-            namespaces: ["knative-serving"]
-    # 3. allow metrics and probes from knative serving namespaces
-    - from:
-        - source:
-            namespaces: ["knative-serving"]
-      to:
-        - operation:
-            paths: ["/metrics", "/healthz", "/ready", "/wait-for-drain"]
+  - to:
+    - operation:
+        paths: ["/v1/models/bert-emotion-model:predict"]
+    when:
+    - key: request.headers[X-Test]
+      values: ["istio-is-cool"]
 EOF
 ```
 
-4. Disable top level VirtualService 
+2. Send a request without the header:
 
-KServe creates an Istio top level VirtuaService to support routing between InferenceService components. To disable the top level virtual service, add the flag "disableIstioVirtualHost": true under the ingress config in inferenceservice configmap.
-
-```
-kubectl edit configmap/inferenceservice-config --namespace kserve
-
-ingress : |- {
-    "disableIstioVirtualHost": true
-}
-```
-
-5. Create inference 
-
-```yaml
-kubectl apply -f - <<EOF
-apiVersion: serving.kserve.io/v1beta1
-kind: InferenceService
-metadata:
-  labels:
-    controller-tools.k8s.io: "1.0"
-  name: bert-model
-  namespace: user1
-  annotations:
-    "sidecar.istio.io/inject": "true"
-spec:
-  predictor:
-    containers:
-    - image: pj3677/bertmodel:0.0.1
-EOF
+``` 
+❯ curl -H "Host: bert-model.default.example.com" -H "content-type: application/json"  http://localhost:8080/v1/models/bert-emotion-model:predict -d '{"input": "The sky is blue and the sun is shining"}' -v
+* Host localhost:8080 was resolved.
+* IPv6: ::1
+* IPv4: 127.0.0.1
+*   Trying [::1]:8080...
+* Connected to localhost (::1) port 8080
+> POST /v1/models/bert-emotion-model:predict HTTP/1.1
+> Host: bert-model.default.example.com
+> User-Agent: curl/8.7.1
+> Accept: */*
+> content-type: application/json
+> Content-Length: 51
+>
+* upload completely sent off: 51 bytes
+< HTTP/1.1 403 Forbidden
+< content-length: 19
+< content-type: text/plain
+< date: Tue, 23 Apr 2024 20:59:34 GMT
+< server: istio-envoy
+< connection: close
+<
+* Closing connection
+RBAC: access denied%
 ```
 
-6. Try from user1 and user2 namespaces:
+3. Send a request with the header: 
 
 ```
-kubectl exec -it deployment/sleep -n user1 -c sleep -- curl bert-model-predictor-00001.user1.svc.cluster.local/v1/models/bert-emotion-model
+❯ curl -H "Host: bert-model.default.example.com" -H "content-type: application/json"  http://localhost:8080/v1/models/bert-emotion-model:predict -d '{"input": "The sky is blue and the sun is shining"}' -v -H "X-Test: istio-is-cool"
+* Host localhost:8080 was resolved.
+* IPv6: ::1
+* IPv4: 127.0.0.1
+*   Trying [::1]:8080...
+* Connected to localhost (::1) port 8080
+> POST /v1/models/bert-emotion-model:predict HTTP/1.1
+> Host: bert-model.default.example.com
+> User-Agent: curl/8.7.1
+> Accept: */*
+> content-type: application/json
+> X-Test: istio-is-cool
+> Content-Length: 51
+>
+* upload completely sent off: 51 bytes
+< HTTP/1.1 200 OK
+< content-length: 303
+< content-type: application/json
+< date: Tue, 23 Apr 2024 21:00:34 GMT
+< server: istio-envoy
+< x-envoy-upstream-service-time: 4137
+<
+* Connection #0 to host localhost left intact
+{"predictions":[[{"label":"joy","score":0.9889927506446838},{"label":"love","score":0.004175746813416481},{"label":"anger","score":0.003846140578389168},{"label":"sadness","score":0.0012988817179575562},{"label":"fear","score":0.0009755274513736367},{"label":"surprise","score":0.0007109164143912494}]]}%
 ```
 
-## Ratelimit 
+## Ratelimit
 
-### Global ratelimiting 
+1. Apply ratelimit descriptors to define counts:
 
+```
 kubectl apply -f - <<EOF
 apiVersion: v1
 kind: ConfigMap
@@ -193,9 +171,17 @@ data:
           unit: minute
           requests_per_unit: 100
 EOF
+```
 
+2. Apply rate limit service: 
+
+```
 kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.21/samples/ratelimit/rate-limit-service.yaml
+```
 
+3. Apply ratelimit filter to ingress gateway:
+
+```
 kubectl apply -f - <<EOF
 apiVersion: networking.istio.io/v1alpha3
 kind: EnvoyFilter
@@ -236,7 +222,11 @@ spec:
                   authority: ratelimit.default.svc.cluster.local
               transport_api_version: V3
 EOF
+```
 
+4. Apply ratelimit actions to bert-model-predictor route:
+
+```
 kubectl apply -f - <<EOF
 apiVersion: networking.istio.io/v1alpha3
 kind: EnvoyFilter
@@ -269,14 +259,15 @@ spec:
                   header_name: "api"
                   descriptor_key: "api"
 EOF
+```
 
-Send a request to the `v1/models/bert-emotion-model:predict` endpoint, the second request should be ratelimited:
+5. Send a request to the `v1/models/bert-emotion-model:predict` endpoint, the second request should be ratelimited:
 
 ```
 curl -H "Host: bert-model.default.example.com" -H "content-type: application/json"  http://localhost:8080/v1/models/bert-emotion-model:predict -d '{"input": "The sky is blue and the sun is shining"}' -v
 ```
 
-Add the `api: my-api-key` header to the request to see the rate limiting rate match the 3 requests per minute descriptor:
+6. Add the `api: my-api-key` header to the request to see the rate limiting rate match the 3 requests per minute descriptor:
 
 ```
  curl -H "Host: bert-model.default.example.com" -H "content-type: application/json"  http://localhost:8080/v1/models/bert-emotion-model:predict -d '{"input": "The sky is blue and the sun is shining"}' -v -H "api: my-api-key"
