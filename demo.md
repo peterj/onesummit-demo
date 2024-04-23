@@ -160,16 +160,16 @@ data:
         value: "/v1/models/bert-emotion-model:predict"
         rate_limit:
           unit: minute
-          requests_per_unit: 1
+          requests_per_unit: 2
         descriptors:
-        - key: "api"
+        - key: "x-api-key"
           rate_limit:
             unit: minute
             requests_per_unit: 3
       - key: "path"
         rate_limit:
           unit: minute
-          requests_per_unit: 100
+          requests_per_unit: 10
 EOF
 ```
 
@@ -243,7 +243,7 @@ spec:
         context: GATEWAY
         routeConfiguration:
           vhost:
-            name: "bert-model-predictor.default.svc.cluster.local:8081"
+            name: ""
             route:
               action: ANY
       patch:
@@ -256,8 +256,12 @@ spec:
                   header_name: ":path"
                   descriptor_key: "path"
               - request_headers:
-                  header_name: "api"
-                  descriptor_key: "api"
+                  header_name: "x-api-key"
+                  descriptor_key: "x-api-key"
+            - actions:
+              - request_headers:
+                  header_name: ":path"
+                  descriptor_key: "path"
 EOF
 ```
 
@@ -270,5 +274,35 @@ curl -H "Host: bert-model.default.example.com" -H "content-type: application/jso
 6. Add the `api: my-api-key` header to the request to see the rate limiting rate match the 3 requests per minute descriptor:
 
 ```
- curl -H "Host: bert-model.default.example.com" -H "content-type: application/json"  http://localhost:8080/v1/models/bert-emotion-model:predict -d '{"input": "The sky is blue and the sun is shining"}' -v -H "api: my-api-key"
+ curl -H "Host: bert-model.default.example.com" -H "content-type: application/json"  http://localhost:8080/v1/models/bert-emotion-model:predict -d '{"input": "The sky is blue and the sun is shining"}' -v -H "x-api-key: my-api-key"
+```
+
+7. Send a request to a different path, the 11th request should be ratelimited: 
+
+```
+> curl -H "Host: bert-model.default.example.com" http://localhost:8080/v1/models/bert-emotion-model  -v
+
+{"name":"bert-emotion-model","ready":"True"}
+```
+
+```
+❯ curl -H "Host: bert-model.default.example.com" http://localhost:8080/v1/models/bert-emotion-model  -v
+* Host localhost:8080 was resolved.
+* IPv6: ::1
+* IPv4: 127.0.0.1
+*   Trying [::1]:8080...
+* Connected to localhost (::1) port 8080
+> GET /v1/models/bert-emotion-model HTTP/1.1
+> Host: bert-model.default.example.com
+> User-Agent: curl/8.7.1
+> Accept: */*
+>
+* Request completely sent off
+< HTTP/1.1 429 Too Many Requests
+< x-envoy-ratelimited: true
+< date: Tue, 23 Apr 2024 21:34:49 GMT
+< server: istio-envoy
+< content-length: 0
+<
+* Connection #0 to host localhost left intact
 ```
