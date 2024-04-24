@@ -1,0 +1,11 @@
+apiVersion: extensions.istio.io/v1alpha1
+kind: WasmPlugin
+metadata:
+  name: stats-plugin
+  namespace: istio-system
+spec:
+  selector:
+    matchLabels:
+     app: istio-ingressgateway
+  url: oci://docker.io/pj3677/stats-plugin:0.0.1
+  imagePullPolicy: Always
