@@ -10,13 +10,7 @@ kind create cluster
 curl -s "https://raw.githubusercontent.com/kserve/kserve/release-0.12/hack/quick_install.sh" | bash
 ```
 
-3. Build & push the docker image from the `hfmodel` folder:
-
-```bash
-docker build -t pj3677/bertmodel:0.0.1 .
-```
-
-4. Deploy the model to Kubernetes using InferenceService (replace the image name if using a different one):
+3. Deploy the model to Kubernetes using InferenceService (replace the image name if using a different one):
 
 ```yaml
 kubectl apply -f - <<EOF
@@ -32,6 +26,8 @@ spec:
     - image: pj3677/bertmodel:0.0.1
 EOF
 ```
+
+Note: you can either use `pj3677/bertmodel:0.0.1` or `pj3677/bertmodel:2.0.0` images. Alternatively, build the image yourself using the Dockerfile in the `hfmodel` directory.
 
 
 ## Testing the inference service
@@ -59,11 +55,11 @@ bert-model   http://bert-model.default.example.com   True           100         
 curl -H "Host: bert-model.default.example.com" -H "content-type: application/json"  http://localhost:8080/v1/models/bert-emotion-model:predict -d '{"input": "The sky is blue and the sun is shining"}'
 ```
 
-## Basic Authentication 
+## Basic Authentication
 
 1. Create an AuthorizationPolicy on the gateway:
 
-```
+```yaml
 kubectl apply -f - <<EOF
 apiVersion: security.istio.io/v1beta1
 kind: AuthorizationPolicy
@@ -87,8 +83,11 @@ EOF
 
 2. Send a request without the header:
 
-``` 
-❯ curl -H "Host: bert-model.default.example.com" -H "content-type: application/json"  http://localhost:8080/v1/models/bert-emotion-model:predict -d '{"input": "The sky is blue and the sun is shining"}' -v
+```shell
+curl -H "Host: bert-model.default.example.com" -H "content-type: application/json"  http://localhost:8080/v1/models/bert-emotion-model:predict -d '{"input": "The sky is blue and the sun is shining"}' -v
+```
+
+```console
 * Host localhost:8080 was resolved.
 * IPv6: ::1
 * IPv4: 127.0.0.1
@@ -115,8 +114,11 @@ RBAC: access denied%
 
 3. Send a request with the header: 
 
+```shell
+curl -H "Host: bert-model.default.example.com" -H "content-type: application/json"  http://localhost:8080/v1/models/bert-emotion-model:predict -d '{"input": "The sky is blue and the sun is shining"}' -v -H "X-Test: istio-is-cool"
 ```
-❯ curl -H "Host: bert-model.default.example.com" -H "content-type: application/json"  http://localhost:8080/v1/models/bert-emotion-model:predict -d '{"input": "The sky is blue and the sun is shining"}' -v -H "X-Test: istio-is-cool"
+
+```console
 * Host localhost:8080 was resolved.
 * IPv6: ::1
 * IPv4: 127.0.0.1
@@ -142,11 +144,17 @@ RBAC: access denied%
 {"predictions":[[{"label":"joy","score":0.9889927506446838},{"label":"love","score":0.004175746813416481},{"label":"anger","score":0.003846140578389168},{"label":"sadness","score":0.0012988817179575562},{"label":"fear","score":0.0009755274513736367},{"label":"surprise","score":0.0007109164143912494}]]}%
 ```
 
+4. Clean up by removing the AuthorizationPolicy:
+
+```shell
+kubectl delete authorizationpolicy allow-with-header -n istio-system
+```
+
 ## Ratelimit
 
 1. Apply ratelimit descriptors to define counts:
 
-```
+```shell
 kubectl apply -f - <<EOF
 apiVersion: v1
 kind: ConfigMap
@@ -173,15 +181,15 @@ data:
 EOF
 ```
 
-2. Apply rate limit service: 
+2. Apply rate limit service:
 
-```
+```shell
 kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.21/samples/ratelimit/rate-limit-service.yaml
 ```
 
 3. Apply ratelimit filter to ingress gateway:
 
-```
+```shell
 kubectl apply -f - <<EOF
 apiVersion: networking.istio.io/v1alpha3
 kind: EnvoyFilter
@@ -226,7 +234,7 @@ EOF
 
 4. Apply ratelimit actions to bert-model-predictor route:
 
-```
+```shell
 kubectl apply -f - <<EOF
 apiVersion: networking.istio.io/v1alpha3
 kind: EnvoyFilter
@@ -267,25 +275,29 @@ EOF
 
 5. Send a request to the `v1/models/bert-emotion-model:predict` endpoint, the second request should be ratelimited:
 
-```
+```shell
 curl -H "Host: bert-model.default.example.com" -H "content-type: application/json"  http://localhost:8080/v1/models/bert-emotion-model:predict -d '{"input": "The sky is blue and the sun is shining"}' -v
 ```
 
 6. Add the `api: my-api-key` header to the request to see the rate limiting rate match the 3 requests per minute descriptor:
 
-```
- curl -H "Host: bert-model.default.example.com" -H "content-type: application/json"  http://localhost:8080/v1/models/bert-emotion-model:predict -d '{"input": "The sky is blue and the sun is shining"}' -v -H "x-api-key: my-api-key"
+```shell
+curl -H "Host: bert-model.default.example.com" -H "content-type: application/json"  http://localhost:8080/v1/models/bert-emotion-model:predict -d '{"input": "The sky is blue and the sun is shining"}' -v -H "x-api-key: my-api-key"
 ```
 
 7. Send a request to a different path, the 11th request should be ratelimited: 
 
+```shell
+curl -H "Host: bert-model.default.example.com" http://localhost:8080/v1/models/bert-emotion-model  -v
 ```
-> curl -H "Host: bert-model.default.example.com" http://localhost:8080/v1/models/bert-emotion-model  -v
 
+```console
 {"name":"bert-emotion-model","ready":"True"}
 ```
 
-```
+The ratelimited response:
+
+```console
 ❯ curl -H "Host: bert-model.default.example.com" http://localhost:8080/v1/models/bert-emotion-model  -v
 * Host localhost:8080 was resolved.
 * IPv6: ::1
@@ -305,4 +317,59 @@ curl -H "Host: bert-model.default.example.com" -H "content-type: application/jso
 < content-length: 0
 <
 * Connection #0 to host localhost left intact
+```
+
+
+## Wasm plugin
+
+The Wasm plugin in the `stats-plugin` folder is a simple plugin that inspects the responses from the model and increments a counter for the highest scoring emotion.
+
+Deploy the plugin to the Istio ingress gateway:
+
+```shell
+kubectl apply -f - <<EOF
+apiVersion: extensions.istio.io/v1alpha1
+kind: WasmPlugin
+metadata:
+  name: stats-plugin
+  namespace: istio-system
+spec:
+  selector:
+    matchLabels:
+     app: istio-ingressgateway
+  url: oci://docker.io/pj3677/stats-plugin:0.0.1
+  imagePullPolicy: Always
+EOF
+```
+
+Send a couple of requests (varying the input sentence):
+
+```shell
+curl -H "Host: bert-model.default.example.com" -H "content-type: application/json"  http://localhost:8080/v1/models/bert-emotion-model:predict -d '{"input": "The mood was somber"}' 
+
+curl -H "Host: bert-model.default.example.com" -H "content-type: application/json"  http://localhost:8080/v1/models/bert-emotion-model:predict -d '{"input": "The boy was crying"}'
+
+curl -H "Host: bert-model.default.example.com" -H "content-type: application/json"  http://localhost:8080/v1/models/bert-emotion-model:predict -d '{"input": "The atmosphere was exciting"}'
+
+curl -H "Host: bert-model.default.example.com" -H "content-type: application/json"  http://localhost:8080/v1/models/bert-emotion-model:predict -d '{"input": "The group was very happy"}'
+```
+
+You can know check the `/stats/prometheus` endpoint on the ingress gateway to see the metrics. For example:
+
+```shell
+kubectl exec -it -n istio-system deploy/istio-ingressgateway -- curl localhost:15000/stats/prometheus | grep sad
+```
+
+```console
+# TYPE sadness counter
+sadness{} 6
+```
+
+```shell
+kubectl exec -it -n istio-system deploy/istio-ingressgateway -- curl localhost:15000/stats/prometheus | grep joy
+```
+
+```console
+# TYPE joy counter
+joy{} 6
 ```
