@@ -203,20 +203,22 @@ data:
   config.yaml: |
     domain: ratelimit
     descriptors:
-      - key: "path"
-        value: "/v1/models/bert-emotion-model:predict"
+    - key: api-key
+      descriptors:
+      - key: header_match
+        value: bert-path
         rate_limit:
           unit: minute
-          requests_per_unit: 2
-        descriptors:
-        - key: "x-api-key"
-          rate_limit:
-            unit: minute
-            requests_per_unit: 5
-      - key: "path"
-        rate_limit:
-          unit: minute
-          requests_per_unit: 10
+          requests_per_unit: 5
+    - key: header_match
+      value: bert-path
+      rate_limit:
+        unit: minute
+        requests_per_unit: 2
+    - key: path
+      rate_limit:
+        unit: minute
+        requests_per_unit: 10
 EOF
 ```
 
@@ -306,11 +308,14 @@ spec:
           rate_limits:
             - actions:
               - request_headers:
-                  header_name: ":path"
-                  descriptor_key: "path"
-              - request_headers:
                   header_name: "x-api-key"
-                  descriptor_key: "x-api-key"
+                  descriptor_key: api-key
+                  skip_if_absent: true
+              - header_value_match:
+                  descriptor_value: bert-path
+                  headers:
+                  - name: :path
+                    prefix_match: /v1/models/bert-emotion-model:predict
             - actions:
               - request_headers:
                   header_name: ":path"
