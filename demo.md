@@ -12,8 +12,13 @@ kind create cluster
 curl -s "https://raw.githubusercontent.com/kserve/kserve/release-0.12/hack/quick_install.sh" | bash
 ```
 
+3. Label the default namespace to enable Istio injection:
 
-3. Install Prometheus, Grafana and Kiali:
+```bash
+kubectl label namespace default istio-injection=enabled
+```
+
+4. Install Prometheus, Grafana and Kiali:
 
 ```bash
 # Install Prometheus and Grafana
@@ -24,7 +29,7 @@ kubectl apply -f https://raw.githubusercontent.com/istio/istio/master/samples/ad
 
 ## The model
 
-We'll use a BERT model to classify emotions in text. The model is a Hugging Face model that's using the KServe SDKs.
+We'll use a BERT model to classify emotions in text. The model is a Hugging Face model that's using the KServe SDK.
 
 1. Deploy the model to Kubernetes using InferenceService (replace the image name if using a different one):
 
